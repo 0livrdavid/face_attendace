@@ -35,7 +35,6 @@ class App:
         if not self.cap.isOpened():
             print("Erro ao abrir a câmera!")
             return
-
         
         self.init_face_recognition()
     
@@ -187,7 +186,6 @@ class App:
         # Liberando a captura de vídeo e fechando todas as janelas
         self.cap.release()
         cv2.destroyAllWindows()
-
 
 if __name__ == "__main__":
     app = App()
