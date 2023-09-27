@@ -2,7 +2,10 @@
 import PySimpleGUI as sg
 
 class Interface():
-    def __init__(self):
+    def __init__(self, recognition_instance):
+        # Define uma variável para comunicação com a classe de reconhecimento facial
+        self.recognition = recognition_instance
+        
         # Defina o layout da janela
         self.layout = self.def_layout()
         
@@ -45,6 +48,8 @@ class Interface():
             if event == sg.WIN_CLOSED:
                 break
             elif event == 'Iniciar/Desligar Identificação':
+                self.recognition.init_capture_webcam()
+                self.recognition.init_face_recognition()
                 # Lógica para iniciar ou desligar a identificação de pessoas
                 pass
             elif event == 'Cadastro de Imagens (Pessoas)':

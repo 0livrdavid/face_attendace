@@ -3,14 +3,14 @@ from datetime import datetime
 
 import pandas as pd
 import numpy as np
-import cv2  # OpenCV para manipulação de imagem e vídeo
+import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
 current_file_path = os.path.abspath(__file__)
 current_directory = os.path.dirname(current_file_path)
 
-path = os.path.join(current_directory, 'img')  # Atualize isso para o caminho correto
-save_path = os.path.join(current_directory, 'new_img')  # Pasta onde as imagens de desconhecidos serão salvas
+path = os.path.join(current_directory, 'faces')  # Atualize isso para o caminho correto
+save_path = os.path.join(current_directory, 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
 
 MAX_CAPTURES = 3  # Número máximo de fotos para um rosto desconhecido
 CAPTURE_INTERVAL = 2.000  # intervalo segundos
@@ -29,14 +29,6 @@ class Recognition:
         
         # Obter encodings das imagens conhecidas
         self.encodeListKnown = self.findEncodings(self.images)
-        
-        # Iniciar captura de vídeo da webcam
-        self.cap = cv2.VideoCapture(0)
-        if not self.cap.isOpened():
-            print("Erro ao abrir a câmera!")
-            return
-        
-        self.init_face_recognition()
     
     # Cria um novo arquivo CSV vazio.
     def create_csv_file(self):
@@ -62,7 +54,7 @@ class Recognition:
         print(myList)
         for cl in myList:
             if self.is_image_file(cl):  # Verifique se é um arquivo de imagem
-                curImg = cv2.imread(f'{path}/{cl}')
+                curImg = cv.imread(f'{path}/{cl}')
                 self.images.append(curImg)
                 self.classNames.append(os.path.splitext(cl)[0])
         print(self.classNames)
@@ -71,7 +63,7 @@ class Recognition:
     def findEncodings(self, images):
         self.encodeList = []
         for img in images:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convertendo imagem para RGB
+            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)  # Convertendo imagem para RGB
             encode = fr.face_encodings(img)[0]
             self.encodeList.append(encode)
         print('Encoding Complete')
@@ -113,30 +105,30 @@ class Recognition:
 
     # Função para checar textura de imagem
     def is_fake_via_texture(self, face_image):
-        gray = cv2.cvtColor(face_image, cv2.COLOR_BGR2GRAY)
-        v = round(np.var(cv2.Laplacian(gray, cv2.CV_64F)),2)
+        gray = cv.cvtColor(face_image, cv.COLOR_BGR2GRAY)
+        v = round(np.var(cv.Laplacian(gray, cv.CV_64F)),2)
         print("texture ",v)
         return v > THRESHOLD_TEXTURE
 
     # Função para checar reflexão de imagem
     def has_reflection(self, face_image):
-        hsv = cv2.cvtColor(face_image, cv2.COLOR_BGR2HSV)
-        _, _, v = cv2.split(hsv)
+        hsv = cv.cvtColor(face_image, cv.COLOR_BGR2HSV)
+        _, _, v = cv.split(hsv)
         avg_brightness = round(np.mean(v),2)
         print("reflexao ",avg_brightness)
         return avg_brightness > THRESHOLD_REFLECTION
     
     # Exibindo o frame atual com as faces destacadas
     def display_results(self, img):
-        cv2.imshow('Webcam', img)
+        cv.imshow('Webcam', img)
     
     def cleanup_resources(self):
         self.cap.release()
-        cv2.destroyAllWindows()
+        cv.destroyAllWindows()
         
     def process_current_frame(self, img):
-        imgS = cv2.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
-        imgS = cv2.cvtColor(imgS, cv2.COLOR_BGR2RGB) # Convertendo imagem para RGB
+        imgS = cv.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
+        imgS = cv.cvtColor(imgS, cv.COLOR_BGR2RGB) # Convertendo imagem para RGB
         
         # Reconhecendo faces no frame atual
         facesCurFrame = fr.face_locations(imgS)
@@ -162,10 +154,10 @@ class Recognition:
             
         y1, x2, y2, x1 = faceLoc
         y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4  # Ajustando as coordenadas para o tamanho original
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 8)
-        cv2.rectangle(img, (x1, y2 - 70), (x2, y2), (0, 255, 0), cv2.FILLED)
-        cv2.putText(img, f"{name} - {dis}", (x1 + 6, y2 - 40), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(img, f"{name2} - {dis2}", (x1 + 6, y2 - 5), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+        cv.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 8)
+        cv.rectangle(img, (x1, y2 - 70), (x2, y2), (0, 255, 0), cv.FILLED)
+        cv.putText(img, f"{name} - {dis}", (x1 + 6, y2 - 40), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(img, f"{name2} - {dis2}", (x1 + 6, y2 - 5), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
         
         face_img = img[max(0, int(y1 - (y2 - y1) * EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * EXPAND_RATIO))]  # Capturando apenas a área da face
         print(self.is_fake_via_texture(face_img),self.has_reflection(face_img))
@@ -181,11 +173,17 @@ class Recognition:
                 filename = os.path.join(save_path, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {timestamp}.jpg") 
                 matchInRecognition = self.check_or_update_unrecognized(encodeFace, True)
                 print(f"Salvando {filename}...")
-                cv2.imwrite(filename, face_img) # salva imagem
+                cv.imwrite(filename, face_img) # salva imagem
                 self.last_captured_time = current_time # Atualizando o tempo de captura
         
         self.markAttendance(name)
-
+        
+    def init_capture_webcam(self):
+        # Iniciar captura de vídeo da webcam
+        self.cap = cv.VideoCapture(0)
+        if not self.cap.isOpened():
+            print("Erro ao abrir a câmera!")
+            return
 
     def init_face_recognition(self):
         # Loop para processar cada frame do vídeo
@@ -205,7 +203,7 @@ class Recognition:
             self.display_results(img)
             
             # Sair do loop se a tecla 'q' for pressionada
-            key = cv2.waitKey(1)
+            key = cv.waitKey(1)
             if key == ord('q'):
                 break
             
