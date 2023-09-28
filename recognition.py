@@ -9,8 +9,9 @@ import face_recognition as fr  # Para reconhecimento facial
 current_file_path = os.path.abspath(__file__)
 current_directory = os.path.dirname(current_file_path)
 
-path = os.path.join(current_directory, 'faces')  # Atualize isso para o caminho correto
-save_path = os.path.join(current_directory, 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
+path_images = os.path.join(current_directory, 'faces')  # Atualize isso para o caminho correto
+save_path_unrecognized = os.path.join(current_directory, 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
+save_path_recognized = os.path.join(current_directory, 'recognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
 
 MAX_CAPTURES = 3  # Número máximo de fotos para um rosto desconhecido
 CAPTURE_INTERVAL = 2.000  # intervalo segundos
@@ -50,11 +51,11 @@ class Recognition:
     def load_images(self):
         self.images = []
         self.classNames = []
-        myList = os.listdir(path)
+        myList = os.listdir(path_images)
         print(myList)
         for cl in myList:
             if self.is_image_file(cl):  # Verifique se é um arquivo de imagem
-                curImg = cv.imread(f'{path}/{cl}')
+                curImg = cv.imread(f'{path_images}/{cl}')
                 self.images.append(curImg)
                 self.classNames.append(os.path.splitext(cl)[0])
         print(self.classNames)
@@ -122,10 +123,7 @@ class Recognition:
     def display_results(self, img):
         cv.imshow('Webcam', img)
     
-    def cleanup_resources(self):
-        self.cap.release()
-        cv.destroyAllWindows()
-        
+ 
     def process_current_frame(self, img):
         imgS = cv.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
         imgS = cv.cvtColor(imgS, cv.COLOR_BGR2RGB) # Convertendo imagem para RGB
@@ -142,6 +140,8 @@ class Recognition:
         isUnkwnown = False
         matchIndex = np.argmin(faceDis)
         
+        
+        
         # Se houver uma correspondência, a face é destacada e a presença é marcada
         if matches[matchIndex]:
             name = self.classNames[matchIndex].upper()
@@ -150,6 +150,7 @@ class Recognition:
             dis2 = round(faceDis[matchIndex+1], 2)
         else:
             name = matchInRecognition['name']
+            dis = "Unknown"
             isUnkwnown = True
             
         y1, x2, y2, x1 = faceLoc
@@ -157,7 +158,8 @@ class Recognition:
         cv.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 8)
         cv.rectangle(img, (x1, y2 - 70), (x2, y2), (0, 255, 0), cv.FILLED)
         cv.putText(img, f"{name} - {dis}", (x1 + 6, y2 - 40), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
-        cv.putText(img, f"{name2} - {dis2}", (x1 + 6, y2 - 5), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+        if matches[matchIndex]:
+            cv.putText(img, f"{name2} - {dis2}", (x1 + 6, y2 - 5), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
         
         face_img = img[max(0, int(y1 - (y2 - y1) * EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * EXPAND_RATIO))]  # Capturando apenas a área da face
         print(self.is_fake_via_texture(face_img),self.has_reflection(face_img))
@@ -170,7 +172,7 @@ class Recognition:
             if matchInRecognition['count'] <= MAX_CAPTURES and (self.last_captured_time is None or (current_time - self.last_captured_time).total_seconds() > CAPTURE_INTERVAL):
                 timestamp = current_time.strftime('%Y-%m-%d_%H-%M-%S')
                 face_img = img[max(0, int(y1 - (y2 - y1) * EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * EXPAND_RATIO))]  # Capturando apenas a área da face
-                filename = os.path.join(save_path, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {timestamp}.jpg") 
+                filename = os.path.join(save_path_unrecognized, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {timestamp}.jpg") 
                 matchInRecognition = self.check_or_update_unrecognized(encodeFace, True)
                 print(f"Salvando {filename}...")
                 cv.imwrite(filename, face_img) # salva imagem
@@ -178,34 +180,15 @@ class Recognition:
         
         self.markAttendance(name)
         
-    def init_capture_webcam(self):
-        # Iniciar captura de vídeo da webcam
-        self.cap = cv.VideoCapture(0)
-        if not self.cap.isOpened():
-            print("Erro ao abrir a câmera!")
-            return
+    
 
-    def init_face_recognition(self):
-        # Loop para processar cada frame do vídeo
-        while True:
-            success, img = self.cap.read()
-            if not success:
-                print("Erro ao acessar a webcam!")
-                break
-            
-            facesCurFrame, encodesCurFrame = self.process_current_frame(img)
+    def init_face_recognition(self, img):
+        facesCurFrame, encodesCurFrame = self.process_current_frame(img)
 
-            # Comparando faces reconhecidas com faces conhecidas
-            for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
-                self.handle_face_recognition(encodeFace, faceLoc, img)
+        # Comparando faces reconhecidas com faces conhecidas
+        for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
+            self.handle_face_recognition(encodeFace, faceLoc, img)
 
-            # Exibindo o frame atual com as faces destacadas
-            self.display_results(img)
-            
-            # Sair do loop se a tecla 'q' for pressionada
-            key = cv.waitKey(1)
-            if key == ord('q'):
-                break
-            
-        # Liberando a captura de vídeo e fechando todas as janelas
-        self.cleanup_resources()
+        # Exibindo o frame atual com as faces destacadas
+        #self.display_results(img)
+        pass
