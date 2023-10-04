@@ -70,6 +70,7 @@ class Interface():
                 print("Erro ao acessar a webcam!")
                 break
             
+            # Lógica para iniciar ou desligar a identificação de pessoas
             if self.init_face_recognition:
                 self.recognition.init_face_recognition(img)
             
