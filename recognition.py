@@ -6,14 +6,7 @@ import numpy as np
 import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
-current_file_path = os.path.abspath(__file__)
-current_directory = os.path.dirname(current_file_path)
 
-path_images = os.path.join(current_directory, 'faces')  # Pasta onde fica as imagens das pessoas conhecidas
-save_path_unrecognized = os.path.join(current_directory, 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
-save_path_recognized = os.path.join(current_directory, 'recognized_faces')  # Pasta onde as imagens de conhecidos serão salvas
-
-NAME_CSV = f'Attendance - {datetime.now().strftime("%d%m%Y %H%M")}.csv'
 
 class Recognition:
     def __init__(self, max_captures_unrecognized = 3, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180):
@@ -23,11 +16,13 @@ class Recognition:
         self.EXPAND_RATIO = expand_ratio # Razão de expansão da imagem do rosto
         self.THRESHOLD_TEXTURE = threshold_texture # Limiar de reconhecimento de veracidade de textura
         self.THRESHOLD_REFLECTION = threshold_reflection # Limiar de reconhecimento de veracidade de reflexão
+        self.NAME_CSV = f'Attendance - {datetime.now().strftime("%d%m%Y %H%M")}.csv'
         
+        self.recognized_faces = []  # Lista para armazenar informações sobre rostos conhecidos
         self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
         self.last_captured_time = datetime.now()
 
-        self.create_csv_file()
+        # Carrega as imagens do diretório especificado  
         self.load_images()
         
         # Obter encodings das imagens conhecidas
@@ -55,10 +50,11 @@ class Recognition:
     
     # Cria um novo arquivo CSV vazio.
     def create_csv_file(self):
-        csv_path = os.path.join(os.getcwd(), 'attendance', NAME_CSV)
+        csv_path = os.path.join(os.getcwd(), 'attendance', self.NAME_CSV)
         self.df = pd.DataFrame(list())
         self.df.to_csv(csv_path)
         
+    # verifica se é uma imagem
     def is_image_file(self, filename):
         # Lista das extensões permitidas
         allowed_extensions = ['.jpg', '.jpeg', '.png']
@@ -73,12 +69,12 @@ class Recognition:
     def load_images(self):
         self.images = []
         self.classNames = []
-        myList = os.listdir(path_images)
+        myList = os.listdir(self.PATH_IMAGES)
         print(myList)
         for cl in myList:
             if self.is_image_file(cl):
                 try:
-                    curImg = cv.imread(f'{path_images}/{cl}')
+                    curImg = cv.imread(f'{self.PATH_IMAGES}/{cl}')
                     if curImg is None:  # Verifique se a imagem foi carregada corretamente
                         print(f"Erro ao carregar a imagem {cl}. Ela pode estar corrompida.")
                         continue
@@ -104,25 +100,17 @@ class Recognition:
     
     # Função para marcar a presença de uma pessoa reconhecida
     def markAttendance(self, name):
-        with open("attendance/"+NAME_CSV, 'r+') as f:
-            myDataList = f.readlines()
-            self.nameList = {}
-            for line in myDataList:
-                entry = line.split(',')
-                if len(entry) > 1:  # Certifique-se de que temos pelo menos nome e timestamp
-                    self.nameList[entry[0]] = datetime.strptime(entry[1].strip(), '%Y-%m-%d %H:%M:%S')  # Convertendo a string para um objeto datetime
+        now = datetime.now()
+        dtString = now.strftime('%Y-%m-%d %H:%M:%S')
 
-            now = datetime.now()
-            dtString = now.strftime('%Y-%m-%d %H:%M:%S')
-
-            # Se a pessoa não foi marcada ainda ou se foi marcada há mais de 2 horas, a presença é registrada
-            if name not in self.nameList:
-                f.writelines(f'\n{name},{dtString}')
-            else:
-                last_seen = self.nameList[name]
-                time_diff = now - last_seen
-                if time_diff.total_seconds() > 2 * 60 * 60:  # 2 horas em segundos
-                    f.writelines(f'\n{name},{dtString}')
+        existing_record = next((record for record in self.recognized_faces if record["name"] == name), None)
+        if not existing_record:
+            self.recognized_faces.append({"name": name, "timestamp": dtString})
+        else:
+            last_seen = datetime.strptime(existing_record['timestamp'], '%Y-%m-%d %H:%M:%S')
+            time_diff = now - last_seen
+            if time_diff.total_seconds() > 2 * 60 * 60:  # 2 horas em segundos
+                existing_record['timestamp'] = dtString
     
     # Função para checar ou atualizar array de rostos desconhecidos
     def check_or_update_unrecognized(self, face_encoding, _update):
@@ -155,7 +143,7 @@ class Recognition:
     def display_results(self, img):
         cv.imshow('Webcam', img)
     
- 
+    # Processa o frame atual das faces destacadas com as faces armazenadas
     def process_current_frame(self, img):
         imgS = cv.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
         imgS = cv.cvtColor(imgS, cv.COLOR_BGR2RGB) # Convertendo imagem para RGB
@@ -165,6 +153,7 @@ class Recognition:
         encodesCurFrame = fr.face_encodings(imgS, facesCurFrame)
         return facesCurFrame, encodesCurFrame
         
+    
     def handle_face_recognition(self, encodeFace, faceLoc, img):
         matches = fr.compare_faces(self.encodeListKnown, encodeFace)
         faceDis = fr.face_distance(self.encodeListKnown, encodeFace)
@@ -203,7 +192,7 @@ class Recognition:
                 matchInRecognition = self.check_or_update_unrecognized(encodeFace, True) # Função para checar ou atualizar array de rostos desconhecidos
                 
                 face_img = img[max(0, int(y1 - (y2 - y1) * self.EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * self.EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * self.EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * self.EXPAND_RATIO))]  # Capturando apenas a área da face
-                filename = os.path.join(save_path_unrecognized, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg") 
+                filename = os.path.join(self.SAVE_PATH_UNRECOGNIZED, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg") 
                 print(f"Salvando {filename}...")
                 self.save_image(filename, face_img) # salva imagem
                 
