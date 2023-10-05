@@ -27,9 +27,9 @@ class Interface():
             [
                 sg.Column(
                     [
-                        [sg.Button('Iniciar/Desligar Identificação', size=(15, 2))],
-                        [sg.Button('Cadastro de Imagens (Pessoas)', size=(15, 2))],
-                        [sg.Button('Exclusão de Imagens (Pessoas)', size=(15, 2))],
+                        [sg.Button('Iniciar Identificação', size=(15, 2))],
+                        [sg.Button('Cadastro de Imagem (Pessoas)', size=(15, 2))],
+                        [sg.Button('Exclusão de Imagem (Pessoas)', size=(15, 2))],
                         [sg.Button('Ver Tabela Pessoas Identificadas', size=(15, 2))],
                         [sg.Button('Configurações', size=(15, 2))],
                     ],
@@ -44,24 +44,26 @@ class Interface():
         ]
         
         return layout
-    
+        
     def init_capture_webcam(self):
-        # Iniciar captura de vídeo da webcam
-        self.cap = cv.VideoCapture(0)
-        if not self.cap.isOpened():
-            print("Erro ao abrir a câmera!")
-            return
+        try:
+            self.cap = cv.VideoCapture(0)
+            if not self.cap.isOpened():
+                sg.PopupError("Erro ao abrir a câmera!")
+                return False
+            return True
+        except Exception as e:
+            sg.PopupError(f"Ocorreu um erro: {str(e)}")
+            return False
+
         
     def cleanup_resources(self):
+        self.window.close()
         self.cap.release()
         cv.destroyAllWindows()
         
     def init_interface(self):
-        self.init_capture_webcam()
-        
-        # Verifica se a câmera foi inicializada corretamente
-        if not self.cap.isOpened():
-            sg.Popup("Não foi possível abrir a câmera.")
+        if not self.init_capture_webcam():
             return
         
         while True:
@@ -82,12 +84,14 @@ class Interface():
             event, values = self.window.read(timeout=5)
             if event == sg.WIN_CLOSED:
                 break
-            elif event == 'Iniciar/Desligar Identificação':
+            elif event == 'Iniciar Identificação':
                 # Lógica para iniciar ou desligar a identificação de pessoas
                 if self.init_face_recognition:
                     self.init_face_recognition = False
+                    self.window['Iniciar Identificação'].update(text='Iniciar Identificação')
                 else: 
                     self.init_face_recognition = True
+                    self.window['Iniciar Identificação'].update(text='Desligar Identificação')
                 pass
             elif event == 'Cadastro de Imagens (Pessoas)':
                 # Lógica para o cadastro de imagens (pessoas)
@@ -113,6 +117,5 @@ class Interface():
                 # Lógica para abrir as configurações
                 pass
             
-        # Feche a janela ao sair
-        self.window.close()
+        # Fechar a janela ao sair
         self.cleanup_resources()
