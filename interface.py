@@ -11,13 +11,9 @@ class Interface():
         self.table_visible = False
         self.init_face_recognition = False
         
-        # Defina o layout da janela
-        self.layout = self.def_layout()
-        
+        self.layout = self.def_layout() # Defina o layout da janela
         self.window = sg.Window('Sistema de Reconhecimento Facial - Controle de Presença', self.layout, resizable=True, finalize=True)
-        
-        # Inicializa a interface
-        self.init_interface()
+        self.init_interface() # Inicializa a interface
         
     
     # Defina o layout da janela

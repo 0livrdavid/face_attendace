@@ -6,10 +6,13 @@ import numpy as np
 import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
-
-
 class Recognition:
-    def __init__(self, max_captures_unrecognized = 3, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180):
+    def __init__(self, path_images, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 3, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180):
+        # Definição dos caminhos relativos as pastas
+        self.PATH_IMAGES = path_images
+        self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
+        self.SAVE_PATH_RECOGNIZED = save_path_recognized
+        
         # variaveis de controle
         self.MAX_CAPTURES_UNRECOGNIZED = max_captures_unrecognized # Número máximo de captura de fotos para um rosto desconhecido
         self.CAPTURE_INTERVAL_UNRECOGNIZED = capture_interval_unrecognized # intervalo segundos para captura de fotos
@@ -22,11 +25,8 @@ class Recognition:
         self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
         self.last_captured_time = datetime.now()
 
-        # Carrega as imagens do diretório especificado  
-        self.load_images()
-        
-        # Obter encodings das imagens conhecidas
-        self.encodeListKnown = self.findEncodings(self.images)
+        self.load_images()# Carrega as imagens do diretório especificado  
+        self.encodeListKnown = self.findEncodings(self.images) # Obter encodings das imagens conhecidas
         
     # Setter para MAX_CAPTURES_UNRECOGNIZED
     def set_MAX_CAPTURES_UNRECOGNIZED(self, max_captures_unrecognized):
@@ -143,7 +143,7 @@ class Recognition:
     def display_results(self, img):
         cv.imshow('Webcam', img)
     
-    # Processa o frame atual das faces destacadas com as faces armazenadas
+    # Processa o frame atual para reconhecer faces armazenadas
     def process_current_frame(self, img):
         imgS = cv.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
         imgS = cv.cvtColor(imgS, cv.COLOR_BGR2RGB) # Convertendo imagem para RGB
@@ -153,7 +153,7 @@ class Recognition:
         encodesCurFrame = fr.face_encodings(imgS, facesCurFrame)
         return facesCurFrame, encodesCurFrame
         
-    
+    # 
     def handle_face_recognition(self, encodeFace, faceLoc, img):
         matches = fr.compare_faces(self.encodeListKnown, encodeFace)
         faceDis = fr.face_distance(self.encodeListKnown, encodeFace)
