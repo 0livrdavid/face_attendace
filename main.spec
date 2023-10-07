@@ -9,6 +9,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
+        ('src', 'src'),
         ('faces', 'faces'),
         ('recognized_faces', 'recognized_faces'),
         ('unrecognized_faces', 'unrecognized_faces'),

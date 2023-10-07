@@ -10,8 +10,8 @@ class Recognition:
     def __init__(self, path_images, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 3, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180):
         # Definição dos caminhos relativos as pastas
         self.PATH_IMAGES = path_images
-        self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
         self.SAVE_PATH_RECOGNIZED = save_path_recognized
+        self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
         
         # variaveis de controle
         self.MAX_CAPTURES_UNRECOGNIZED = max_captures_unrecognized # Número máximo de captura de fotos para um rosto desconhecido
