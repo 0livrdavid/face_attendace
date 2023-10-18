@@ -8,7 +8,7 @@
 - pip install pysimplegui
 - pip install face_recognition
 
-2 - Defina as imagens de rostos previamente conhecidos em "/img"
+2 - Defina as imagens de rostos previamente conhecidos em "/faces"
 
-3 - Inicie o procedimento com o arquivo "start.py"
+3 - Inicie o procedimento com o arquivo "main.py"
 
