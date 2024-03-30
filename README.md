@@ -2,12 +2,9 @@
 # Instalação
 
 1 - Coloque em seu terminal os códigos de instalação das bibliotecas:  
-- pip install opencv-python
-- pip install numpy
-- pip install pandas
-- pip install face_recognition
+- pip install -r requirements.txt
 
-2 - Defina as imagens de rostos previamente conhecidos em "/img"
+2 - Defina as imagens de rostos nas configurações da aplicação
 
-3 - Inicie o procedimento com o arquivo "start.py"
+3 - Inicie o arquivo main.py
 
