@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import re
 import json
@@ -9,18 +9,24 @@ import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
 class Recognition:
-    def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.50):
+    def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.50, face_height_threshold = 350):
         logging.basicConfig(filename='recognition.log', level=logging.INFO)
         
         # Definição dos caminhos relativos as pastas
         self.setup_paths(path_faces, save_path_recognized, save_path_unrecognized)
         
         # variaveis de controle
-        self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding)
+        self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding, face_height_threshold)
         
         self.recognized_faces = []  # Lista para armazenar informações sobre rostos conhecidos
         self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
         self.last_captured_time = datetime.now()
+        self.value_has_reflection = False
+        self.value_is_fake_via_texture = False
+        self.value_round_is_fake_via_texture = 0
+        self.value_round_has_reflection = 0
+        self.image_count = {}
+        self.last_capture_time_recognized = {}
 
         self.load_and_encode_images()# Carrega as imagens do diretório especificado  
         self.encodeListKnown = self.find_encodings(self.images) # Obter encodings das imagens conhecidas
@@ -31,7 +37,7 @@ class Recognition:
         self.SAVE_PATH_RECOGNIZED = save_path_recognized
         self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
         
-    def setup_parameters(self, max_captures=None, interval=None, expand_ratio=None, texture_thresh=None, reflection_thresh=None, dis_face_encoding=None):
+    def setup_parameters(self, max_captures=None, interval=None, expand_ratio=None, texture_thresh=None, reflection_thresh=None, dis_face_encoding=None, face_height_threshold=None):
         if max_captures is not None:
             self.MAX_CAPTURES_UNRECOGNIZED = max_captures
         if interval is not None:
@@ -44,7 +50,8 @@ class Recognition:
             self.THRESHOLD_REFLECTION = reflection_thresh
         if dis_face_encoding is not None:
             self.DIS_FACE_ENCODING = dis_face_encoding
-        self.NAME_CSV = f'Attendance - {datetime.now().strftime("%d%m%Y %H%M")}.csv'
+        if face_height_threshold is not None:
+            self.FACE_HEIGHT_THRESHOLD = face_height_threshold
 
     # Setter para MAX_CAPTURES_UNRECOGNIZED
     def set_MAX_CAPTURES_UNRECOGNIZED(self, max_captures_unrecognized):
@@ -65,16 +72,14 @@ class Recognition:
     # Setter para THRESHOLD_REFLECTION
     def set_THRESHOLD_REFLECTION(self, threshold_reflection):
         self.THRESHOLD_REFLECTION = threshold_reflection
+        
+    # Setter para THRESHOLD_REFLECTION
+    def set_THRESHOLD_HEIGHT(self, face_height_threshold):
+        self.FACE_HEIGHT_THRESHOLD = face_height_threshold
     
     # Setter para DIS_FACE_ENCODING
     def set_DIS_FACE_ENCODING(self, dis_face_encoding):
         self.DIS_FACE_ENCODING = dis_face_encoding
-    
-    # Cria um novo arquivo CSV vazio.
-    def create_csv_file(self):
-        csv_path = os.path.join(os.getcwd(), 'attendance', self.NAME_CSV)
-        self.df = pd.DataFrame(list())
-        self.df.to_csv(csv_path)
         
     # verifica se é uma imagem
     def is_image_file(self, filename):
@@ -150,10 +155,6 @@ class Recognition:
         self.value_round_has_reflection = avg_brightness
         return avg_brightness > self.THRESHOLD_REFLECTION
     
-    # Exibindo o frame atual com as faces destacadas
-    def display_results(self, img):
-        cv.imshow('Webcam', img)
-    
     # Processa o frame atual para reconhecer faces armazenadas
     def process_current_frame(self, img):
         imgS = cv.resize(img, (0, 0), None, 0.25, 0.25) # Reduzindo o tamanho da imagem para acelerar o processamento
@@ -189,65 +190,82 @@ class Recognition:
         
     # Logica de processamento reconhecimento de face
     def handle_face_recognition(self, encodeFace, faceLoc, img):
+        FACE_COLOR_NEAR = (0, 255, 0)  # Verde para "perto"
+        FACE_COLOR_FAR = (0, 0, 255)   # Vermelho para "distante"
+        
+        current_time = datetime.now()
         matches = fr.compare_faces(self.encodeListKnown, encodeFace)
         faceDis = fr.face_distance(self.encodeListKnown, encodeFace)
-        matchInRecognition = self.check_or_update_unrecognized(encodeFace,False)
-        isUnkwnown = False
+        matchInRecognition = self.check_or_update_unrecognized(encodeFace, False)
+        isUnknown = False
         matchIndex = np.argmin(faceDis)
-        
-        # Se houver uma correspondência, a face é destacada e a presença é marcada
+
         if matches[matchIndex]:
-            # primeiro nome provavel
+            # Primeiro nome provável
             name = self.person_name.get(self.classNames[matchIndex], "Desconhecido").upper()
             dis = round(faceDis[matchIndex], 2)
-        
-            # segundo nome provavel
-            if matchIndex + 1 < len(self.classNames):
-                name2 = self.person_name.get(self.classNames[matchIndex+1], "Desconhecido").upper()
-            else: 
-                name2 = None        
-            
-            if matchIndex + 1 < len(faceDis):
-                dis2 = round(faceDis[matchIndex+1], 2)
-            else: 
-                dis2 = None
-                
         else:
             name = matchInRecognition['name']
             dis = "Unknown"
-            isUnkwnown = True
-            
+            isUnknown = True
+
         y1, x2, y2, x1 = faceLoc
         y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4  # Ajustando as coordenadas para o tamanho original
-        cv.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 8)
-        cv.rectangle(img, (x1, y2 - 70), (x2, y2), (0, 255, 0), cv.FILLED)
-        cv.putText(img, f"{name} - {dis}", (x1 + 6, y2 - 40), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
-        if matches[matchIndex]:
-            cv.putText(img, f"{name2} - {dis2}", (x1 + 6, y2 - 5), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+
+        # Estima a distância com base na altura do rosto
+        face_height = y2 - y1
+        if face_height >= self.FACE_HEIGHT_THRESHOLD:
+            color = FACE_COLOR_NEAR
+            distance_text = "Perto"
+            value_distance_near = True
+        else:
+            color = FACE_COLOR_FAR
+            distance_text = "Distante"
+            value_distance_near = False
+
+        # Desenhe os retângulos ao redor da face e os textos
+        cv.rectangle(img, (x1, y1), (x2, y2), color, 8)
+        cv.rectangle(img, (x1, y2 - 100), (x2, y2), color, cv.FILLED)
+        cv.putText(img, f"{name} - {dis}", (x1 + 6, y2 - 70), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+        cv.putText(img, distance_text, (x1 + 6, y2 - 30), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+
+        # Captura apenas a área da face
+        face_img = img[max(0, int(y1 - (y2 - y1) * self.EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * self.EXPAND_RATIO)),
+                    max(0, int(x1 - (x2 - x1) * self.EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * self.EXPAND_RATIO))]
         
-        face_img = img[max(0, int(y1 - (y2 - y1) * self.EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * self.EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * self.EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * self.EXPAND_RATIO))]  # Capturando apenas a área da face
-        self.is_fake_via_texture(face_img)
-        self.has_reflection(face_img)
-        
+        # Verificação de textura e reflexão para falsificações
         # Se a face é desconhecida, salva a imagem na pasta
-        if not self.value_has_reflection and not self.value_is_fake_via_texture:
-            if isUnkwnown:
-                current_time = datetime.now()
-                
-                # Se o rosto ainda não atingiu o limite e o intervalo de tempo for satisfeito
-                if matchInRecognition['count'] <= self.MAX_CAPTURES_UNRECOGNIZED and (self.last_captured_time is None or (current_time - self.last_captured_time).total_seconds() > self.CAPTURE_INTERVAL_UNRECOGNIZED):
-                    matchInRecognition = self.check_or_update_unrecognized(encodeFace, True) # Função para checar ou atualizar array de rostos desconhecidos
-                    
-                    face_img = img[max(0, int(y1 - (y2 - y1) * self.EXPAND_RATIO)):min(img.shape[0], int(y2 + (y2 - y1) * self.EXPAND_RATIO)), max(0, int(x1 - (x2 - x1) * self.EXPAND_RATIO)):min(img.shape[1], int(x2 + (x2 - x1) * self.EXPAND_RATIO))]  # Capturando apenas a área da face
-                    filename = os.path.join(self.SAVE_PATH_UNRECOGNIZED, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg") 
+        if not self.is_fake_via_texture(face_img) and not self.has_reflection(face_img):
+            if isUnknown:
+                if matchInRecognition['count'] <= self.MAX_CAPTURES_UNRECOGNIZED and (
+                        self.last_captured_time is None or (current_time - self.last_captured_time).total_seconds() > self.CAPTURE_INTERVAL_UNRECOGNIZED):
+                    matchInRecognition = self.check_or_update_unrecognized(encodeFace, True)  # Atualiza array de rostos desconhecidos
+                    filename = os.path.join(self.SAVE_PATH_UNRECOGNIZED, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
                     print(f"Salvando {filename}...")
-                    self.save_image(filename, face_img) # salva imagem
-                    
-                    self.last_captured_time = current_time # Atualizando o tempo de captura
-                    self.mark_attendance(matchInRecognition['name'],1.00)
+                    self.save_image(filename, face_img)
+                    self.last_captured_time = current_time
+                    #self.mark_attendance(matchInRecognition['name'], 1.00)
             else:
-                if (dis < self.DIS_FACE_ENCODING): 
-                    self.mark_attendance(name,dis)
+                if dis != "Unknown" and dis < self.DIS_FACE_ENCODING and value_distance_near:
+                    self.mark_attendance(name, dis)
+                        
+                    # Create a directory for the person if it doesn't exist
+                    person_folder = os.path.join(self.SAVE_PATH_RECOGNIZED, name)
+                    if not os.path.exists(person_folder):
+                        os.makedirs(person_folder)    
+                    
+                    last_capture_time_recognized = self.last_capture_time_recognized.get(name)
+                    if last_capture_time_recognized is None or (current_time - last_capture_time_recognized).total_seconds() > 1:
+                        if self.image_count.get(name, 0) < 3:
+                            filename = os.path.join(person_folder, f"{name}.{self.image_count.get(name, 0) + 1} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
+                            self.save_image(filename, face_img)
+                            self.image_count[name] = self.image_count.get(name, 0) + 1
+                            self.last_capture_time_recognized[name] = current_time
+                            print(f"Salvando {filename}...")
+        else:
+            cv.putText(img, "PHONE DETECTED", (x1 + 6, y2), cv.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 2)
+                    
+
         
     def save_image(self, path, image):
         try:
@@ -265,9 +283,6 @@ class Recognition:
         # Comparando faces reconhecidas com faces conhecidas
         for encodeFace, faceLoc in zip(encodesCurFrame, facesCurFrame):
             self.handle_face_recognition(encodeFace, faceLoc, img)
-
-        # Exibindo o frame atual com as faces destacadas
-        #self.display_results(img)
         pass
     
     # Recarregar todas as imagens e encodes

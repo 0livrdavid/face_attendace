@@ -4,8 +4,10 @@ import cv2 as cv
 import logging
 import time
 import json
+import csv
 import uuid
 import shutil
+from screeninfo import get_monitors
 import numpy as np
 from recognition import Recognition
 
@@ -36,6 +38,8 @@ class Interface:
             sg.PopupError("Erro ao criar a janela!")
             logging.error("Erro ao criar a janela!")
             return
+        
+        self.update_person_list()
 
     def init_interface(self):
         self.recognition = Recognition(
@@ -58,6 +62,7 @@ class Interface:
             self.PATH_FACES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faces')  # Pasta onde fica as imagens das pessoas conhecidas
             self.SAVE_PATH_RECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recognized_faces') # Pasta onde as imagens de conhecidos serão salvase
             self.SAVE_PATH_UNRECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
+            self.SAVE_PATH_ATTENDANCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'attendance')  # Pasta onde os csv exportados serão salvas
             return True
         except Exception as e:
             sg.PopupError(f"Erro ao inicializar variaveis de path: {str(e)}")
@@ -68,9 +73,12 @@ class Interface:
         #definição de variaveis
         try:
             self.init_face_recognition = False
+            self.full_screen_active = False
+            self.full_screen_window = None
             self.camera_permission_error_shown = False
             self.cam_index = 0
             self.current_image_data = None 
+            self.image_bytes_camera = None 
             self.placeholder_img = cv.imread(f'{self.PATH_SRC}/placeholder.png')
             
             if self.placeholder_img is None:
@@ -88,7 +96,8 @@ class Interface:
         camera_column = [
             [sg.Image(filename='', key='-CAMERA-', size=(640, 480))],
             [sg.Text('Threshold de Textura:', size=(20, 1)), sg.Text('0', key='-TEXTURE-THRESHOLD-')],
-            [sg.Text('Threshold de Reflexão:', size=(20, 1)), sg.Text('0', key='-REFLECTION-THRESHOLD-')]
+            [sg.Text('Threshold de Reflexão:', size=(20, 1)), sg.Text('0', key='-REFLECTION-THRESHOLD-')],
+            [sg.Button('Abrir Tela Cheia', key='-FULL-SCREEN-CAMERA-')]
         ]
         
         table_column = [[sg.Table(
@@ -100,7 +109,7 @@ class Interface:
             key='-TABLE-', 
             col_widths=[20, 20, 20], 
             size=(640, 480)
-        )]]
+        )],[sg.Button('Exportar para CSV', key='-EXPORT-TO-CSV-')]]
         
         list_images_column = [[sg.Table(
             values=[['', '']], 
@@ -122,13 +131,14 @@ class Interface:
             [sg.Text("Expansão de área de captura da imagem:"), sg.InputText(self.recognition.EXPAND_RATIO, key='-EXPAND-RATIO-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.EXPAND_RATIO})")],
             [sg.Text("Texture Threshold:"), sg.InputText(self.recognition.THRESHOLD_TEXTURE, key='-TEXTURE-THRESH-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.THRESHOLD_TEXTURE})")],
             [sg.Text("Reflection Threshold:"), sg.InputText(self.recognition.THRESHOLD_REFLECTION, key='-REFLECTION-THRESH-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.THRESHOLD_REFLECTION})")],
+            [sg.Text("Distância Facial para a Camera:"), sg.InputText(self.recognition.FACE_HEIGHT_THRESHOLD, key='-HEIGHT-THRESH-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.FACE_HEIGHT_THRESHOLD})")],
             [sg.Text("Limite de Reconhecimento de Distância Facial:"), sg.InputText(self.recognition.DIS_FACE_ENCODING, key='-DIS-FACE-ENCODING-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.DIS_FACE_ENCODING})")],
             [sg.Button("Aplicar Configurações", key='-APPLY-SETTINGS-')]
         ]
 
         # Nova coluna para cadastro de imagem
         adicionar_imagem_column = [
-            [sg.Text("Nome da Pessoa (ou Identificador Único):")],
+            [sg.Text("Identificador Único:")],
             [sg.InputText(key='-PERSON-NAME-')],
             [sg.Text("Selecione a Imagem ou Capture:")],
             [sg.InputText(key='-IMAGE-PATH-'), sg.FileBrowse(key='-IMAGE-FILE-'), sg.Button("Capturar", key='-CAPTURE-'), sg.Button("Excluir", key='-IMAGE-BTN-DELETE-')],
@@ -214,7 +224,7 @@ class Interface:
 
         self.imgbytes = cv.imencode('.png', frame)[1].tobytes()
         self.window['-CAMERA-'].update(data=self.imgbytes)
-
+        
         if open:
             self.camera_permission_error_shown = False
         elif not open and not self.camera_permission_error_shown:
@@ -244,6 +254,9 @@ class Interface:
                 time.sleep(0.1)
                 self.init_face_recognition = True
                 self.window['-INITIALIZE-IDENTIFY-FACES-'].update(text='Parar Identificação')
+        elif event == '-FULL-SCREEN-CAMERA-':
+            if not self.full_screen_active:
+                self.full_screen_active = True
         elif event == '-LAYOUT-CAM-':
             self.window['-CAMERA_COL-'].update(visible=True)
             self.window['-TABLE_COL-'].update(visible=False)
@@ -302,8 +315,9 @@ class Interface:
                 texture_thresh = float(value['-TEXTURE-THRESH-'])
                 reflection_thresh = float(value['-REFLECTION-THRESH-'])
                 dis_face_encoding = float(value['-DIS-FACE-ENCODING-'])
+                face_height_threshold = float(value['-HEIGHT-THRESH-'])
 
-                self.recognition.setup_parameters(max_captures, interval, expand_ratio, texture_thresh, reflection_thresh, dis_face_encoding)
+                self.recognition.setup_parameters(max_captures, interval, expand_ratio, texture_thresh, reflection_thresh, dis_face_encoding, face_height_threshold)
                 sg.Popup("Configurações atualizadas com sucesso!")
             except ValueError:
                 sg.PopupError("Por favor, insira valores válidos para as configurações.")  
@@ -314,6 +328,8 @@ class Interface:
         elif event == '-IMAGE-BTN-DELETE-':
             self.window['-IMAGE-PREVIEW-'].update(data='')  # Limpa a visualização
             self.detected_faces = []  # Limpa a lista de faces detectadas
+        elif event == '-EXPORT-TO-CSV-':
+            self.export_table_to_csv(self.window)
 
         return False
     
@@ -353,20 +369,62 @@ class Interface:
             if self.init_capture_webcam(index):
                 return True, self.cameraIsOpen()
         return False, (False, self.placeholder_img)
-
+            
     def module_functions(self):
         open, (camera_open, img) = self.try_open_cameras()
-
         if camera_open and self.init_face_recognition:
             self.recognition.init_face_recognition(img)
-            # Atualiza os campos de texto com os valores de threshold
+            imgbytes = cv.imencode('.png', img)[1].tobytes()
+            self.image_bytes_camera = imgbytes
             texture_threshold = f"{self.recognition.value_round_is_fake_via_texture} ({self.recognition.THRESHOLD_TEXTURE}) - {self.recognition.value_is_fake_via_texture}"
             reflection_threshold = f"{self.recognition.value_round_has_reflection} ({self.recognition.THRESHOLD_REFLECTION}) - {self.recognition.value_has_reflection}"
             self.window['-TEXTURE-THRESHOLD-'].update(f'{texture_threshold}')
             self.window['-REFLECTION-THRESHOLD-'].update(f'{reflection_threshold}')
-
         self.update_table()
         self.update_camera(camera_open, img)
+        if self.full_screen_active:
+            if self.full_screen_window:
+                self.open_full_screen_camera(update_only=True)
+            else:
+                self.open_full_screen_camera()
+                
+
+    def get_screen_size(self):
+        for m in get_monitors():
+            return m.width, m.height  # Retorna a resolução do primeiro monitor
+        
+    def open_full_screen_camera(self, update_only=False):
+        screen_width, screen_height = self.get_screen_size()
+        if not update_only:
+            if not self.full_screen_window:
+                layout = [
+                    [sg.Image(key='-FULL-IMAGE-CAMERA-', size=(screen_width, screen_height))],
+                    [sg.Button('Fechar', size=(10, 1))]
+                ]
+                self.full_screen_window = sg.Window('Câmera em Tela Cheia', layout, no_titlebar=False, location=(0, 0), resizable=True, finalize=True, keep_on_top=True)
+                self.full_screen_window.Maximize()
+                self.full_screen_active = True
+        if self.full_screen_active and self.full_screen_window:
+            if self.image_bytes_camera:
+                # Decode the image from the bytes
+                frame = cv.imdecode(np.frombuffer(self.image_bytes_camera, np.uint8), cv.IMREAD_COLOR)
+                original_height, original_width = frame.shape[:2]
+                
+                # Calculate the new height maintaining the aspect ratio
+                new_height = int(screen_width * (original_height / original_width))
+                
+                # Resize the frame to the new dimensions
+                frame_resized = cv.resize(frame, (screen_width, new_height))
+                imgbytes = cv.imencode('.png', frame_resized)[1].tobytes()
+                
+                # Update the image in the window
+                self.full_screen_window['-FULL-IMAGE-CAMERA-'].update(data=imgbytes, size=(screen_width, new_height))
+            
+            event, values = self.full_screen_window.read(timeout=10)
+            if event == sg.WIN_CLOSED or event == 'Fechar':
+                self.full_screen_active = False
+                self.full_screen_window.close()
+                self.full_screen_window = None
 
     def save_to_json(self, person_name, image_path, unique_id):
         data = {
@@ -444,5 +502,20 @@ class Interface:
         self.current_image_data = None  # Resetar os dados da imagem após salvar
         self.detected_faces = []  # Limpar a lista de faces detectadas
 
-
+    def export_table_to_csv(self, window):
+        # Recuperar os dados da tabela
+        table_data = window['-TABLE-'].get()
+        filename = sg.popup_get_file('Salvar como', save_as=True, no_window=True, file_types=(("CSV Files", "*.csv"),), default_extension='.csv')
+        
+        if filename:
+            # Abrir o arquivo para escrita
+            with open(filename, 'w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file, delimiter=';')
+                # Escrever o cabeçalho
+                writer.writerow(['Identificador', 'Data e Hora', 'Distancia Facial'])
+                # Escrever os dados da tabela
+                writer.writerows(table_data)
+            sg.popup('Dados exportados com sucesso!', title='Sucesso')
+        else:
+            sg.popup('Exportação cancelada.', title='Cancelado')
         
