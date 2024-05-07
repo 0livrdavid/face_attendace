@@ -9,14 +9,14 @@ import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
 class Recognition:
-    def __init__(self, path_images, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180):
+    def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.50):
         logging.basicConfig(filename='recognition.log', level=logging.INFO)
         
         # Definição dos caminhos relativos as pastas
-        self.setup_paths(path_images, save_path_recognized, save_path_unrecognized)
+        self.setup_paths(path_faces, save_path_recognized, save_path_unrecognized)
         
         # variaveis de controle
-        self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection)
+        self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding)
         
         self.recognized_faces = []  # Lista para armazenar informações sobre rostos conhecidos
         self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
@@ -26,12 +26,12 @@ class Recognition:
         self.encodeListKnown = self.find_encodings(self.images) # Obter encodings das imagens conhecidas
         self.load_person_names() # dicionário onde as chaves são os nomes dos arquivos de imagem
         
-    def setup_paths(self, path_images, save_path_recognized, save_path_unrecognized):
-        self.PATH_IMAGES = path_images
+    def setup_paths(self, path_faces, save_path_recognized, save_path_unrecognized):
+        self.PATH_FACES = path_faces
         self.SAVE_PATH_RECOGNIZED = save_path_recognized
         self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
         
-    def setup_parameters(self, max_captures=None, interval=None, expand_ratio=None, texture_thresh=None, reflection_thresh=None):
+    def setup_parameters(self, max_captures=None, interval=None, expand_ratio=None, texture_thresh=None, reflection_thresh=None, dis_face_encoding=None):
         if max_captures is not None:
             self.MAX_CAPTURES_UNRECOGNIZED = max_captures
         if interval is not None:
@@ -42,9 +42,10 @@ class Recognition:
             self.THRESHOLD_TEXTURE = texture_thresh
         if reflection_thresh is not None:
             self.THRESHOLD_REFLECTION = reflection_thresh
+        if dis_face_encoding is not None:
+            self.DIS_FACE_ENCODING = dis_face_encoding
         self.NAME_CSV = f'Attendance - {datetime.now().strftime("%d%m%Y %H%M")}.csv'
 
-        
     # Setter para MAX_CAPTURES_UNRECOGNIZED
     def set_MAX_CAPTURES_UNRECOGNIZED(self, max_captures_unrecognized):
         self.MAX_CAPTURES_UNRECOGNIZED = max_captures_unrecognized
@@ -65,6 +66,10 @@ class Recognition:
     def set_THRESHOLD_REFLECTION(self, threshold_reflection):
         self.THRESHOLD_REFLECTION = threshold_reflection
     
+    # Setter para DIS_FACE_ENCODING
+    def set_DIS_FACE_ENCODING(self, dis_face_encoding):
+        self.DIS_FACE_ENCODING = dis_face_encoding
+    
     # Cria um novo arquivo CSV vazio.
     def create_csv_file(self):
         csv_path = os.path.join(os.getcwd(), 'attendance', self.NAME_CSV)
@@ -75,14 +80,14 @@ class Recognition:
     def is_image_file(self, filename):
         return re.search(r'\.(jpg|jpeg|png)$', filename, re.IGNORECASE)
     
-     # Carrega as imagens do diretório especificado    
+    # Carrega as imagens do diretório especificado    
     def load_and_encode_images(self):
         self.images = []
         self.classNames = []
         try:
-            for cl in os.listdir(self.PATH_IMAGES):
+            for cl in os.listdir(self.PATH_FACES):
                 if self.is_image_file(cl):
-                    curImg = cv.imread(f'{self.PATH_IMAGES}/{cl}')
+                    curImg = cv.imread(f'{self.PATH_FACES}/{cl}')
                     if curImg is not None:
                         self.images.append(curImg)
                         self.classNames.append(os.path.splitext(cl)[0])
@@ -167,6 +172,7 @@ class Recognition:
         existing_record = next((record for record in self.recognized_faces if record["name"] == name), None)
         if not existing_record:
             # logica caso a pessoa não foi identificada
+            print(f"name: {name}, timestamp_recognized: {dtString}, timestamp: {dtString}, distance: {dis}")
             self.recognized_faces.append({"name": name, "timestamp_recognized": dtString, "timestamp": dtString, 'distance': dis})
         else:
             # logica caso a pessoa ja foi identificada
@@ -223,7 +229,7 @@ class Recognition:
         self.is_fake_via_texture(face_img)
         self.has_reflection(face_img)
         
-        # Se a face é desconhecida, salva a imagem na pasta 'new_img'
+        # Se a face é desconhecida, salva a imagem na pasta
         if not self.value_has_reflection and not self.value_is_fake_via_texture:
             if isUnkwnown:
                 current_time = datetime.now()
@@ -240,7 +246,7 @@ class Recognition:
                     self.last_captured_time = current_time # Atualizando o tempo de captura
                     self.mark_attendance(matchInRecognition['name'],1.00)
             else:
-                if (dis < 0.45): 
+                if (dis < self.DIS_FACE_ENCODING): 
                     self.mark_attendance(name,dis)
         
     def save_image(self, path, image):
@@ -268,3 +274,56 @@ class Recognition:
     def reload_encodings(self):
         self.load_and_encode_images()
         self.load_person_names()
+
+    def extract_face(self, frame, expand_ratio=0.7):
+        # Utilize face_recognition ou OpenCV para detectar faces
+        face_locations = fr.face_locations(frame)
+        if face_locations:
+            top, right, bottom, left = face_locations[0]  # Considera apenas a primeira face detectada
+            height = bottom - top
+            width = right - left
+
+            # Aplica o EXPAND_RATIO para expandir a área ao redor da face detectada
+            expand_height = int(height * expand_ratio)
+            expand_width = int(width * expand_ratio)
+
+            # Recalcula os novos pontos de corte com base no EXPAND_RATIO
+            new_top = max(0, top - expand_height)
+            new_bottom = min(frame.shape[0], bottom + expand_height)
+            new_left = max(0, left - expand_width)
+            new_right = min(frame.shape[1], right + expand_width)
+
+            # Corta a região expandida da imagem
+            expanded_face_area = frame[new_top:new_bottom, new_left:new_right]
+
+            # Redimensiona a imagem para o tamanho máximo de 150x150 pixels
+            final_image = cv.resize(expanded_face_area, (300, 300), interpolation=cv.INTER_AREA)
+            
+            return final_image
+        return None
+    
+    def extract_faces(self, frame, expand_ratio=0.7):
+        faces = []
+        face_locations = fr.face_locations(frame)
+        for top, right, bottom, left in face_locations:
+            # Calcula a altura e a largura da face detectada
+            height = bottom - top
+            width = right - left
+
+            # Aplica o EXPAND_RATIO para expandir a área ao redor da face detectada
+            expand_height = int(height * expand_ratio)
+            expand_width = int(width * expand_ratio)
+
+            # Recalcula os novos pontos de corte com base no EXPAND_RATIO
+            new_top = max(0, top - expand_height)
+            new_bottom = min(frame.shape[0], bottom + expand_height)
+            new_left = max(0, left - expand_width)
+            new_right = min(frame.shape[1], right + expand_width)
+
+            # Corta a região expandida da imagem
+            expanded_face_area = frame[new_top:new_bottom, new_left:new_right]
+
+            # Redimensiona a imagem para o tamanho desejado de 300x300 pixels
+            resized_face = cv.resize(expanded_face_area, (300, 300), interpolation=cv.INTER_AREA)
+            faces.append(resized_face)
+        return faces

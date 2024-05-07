@@ -2,9 +2,11 @@ import PySimpleGUI as sg
 import os
 import cv2 as cv
 import logging
+import time
 import json
 import uuid
 import shutil
+import numpy as np
 from recognition import Recognition
 
 class Interface:
@@ -37,7 +39,7 @@ class Interface:
 
     def init_interface(self):
         self.recognition = Recognition(
-            path_images=self.PATH_IMAGES, 
+            path_faces=self.PATH_FACES, 
             save_path_recognized=self.SAVE_PATH_RECOGNIZED, 
             save_path_unrecognized=self.SAVE_PATH_UNRECOGNIZED
         )
@@ -53,7 +55,7 @@ class Interface:
     def init_variable_path(self):
         try:
             self.PATH_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')  # Pasta onde fica as imagens das pessoas conhecidas
-            self.PATH_IMAGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faces')  # Pasta onde fica as imagens das pessoas conhecidas
+            self.PATH_FACES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faces')  # Pasta onde fica as imagens das pessoas conhecidas
             self.SAVE_PATH_RECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recognized_faces') # Pasta onde as imagens de conhecidos serão salvase
             self.SAVE_PATH_UNRECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
             return True
@@ -68,8 +70,9 @@ class Interface:
             self.init_face_recognition = False
             self.camera_permission_error_shown = False
             self.cam_index = 0
-
+            self.current_image_data = None 
             self.placeholder_img = cv.imread(f'{self.PATH_SRC}/placeholder.png')
+            
             if self.placeholder_img is None:
                 sg.PopupError("Erro ao carregar a imagem placeholder!")
                 logging.error("Erro ao carregar a imagem placeholder!")
@@ -113,22 +116,25 @@ class Interface:
         settings_column = [
             [sg.Text("Selecione uma câmera")],
             [sg.Listbox(values=[f"{index} - {name}" for index, name in self.list_cameras()], size=(30, 10), key='-CAMERA-LIST-', enable_events=True)],
-            [sg.Button("Selecionar Câmera"), sg.Button("Atualizar Câmeras")],
+            [sg.Button("Selecionar Câmera", key='-CAMERA-SELECT-LIST-'), sg.Button("Atualizar Câmeras", key='-CAMERA-UPDATE-LIST-')],
             [sg.Text("Maxímo de fotos capturadas:"), sg.InputText(self.recognition.MAX_CAPTURES_UNRECOGNIZED, key='-MAX-CAPTURES-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.MAX_CAPTURES_UNRECOGNIZED})")],
             [sg.Text("Interval de captura de imagens:"), sg.InputText(self.recognition.CAPTURE_INTERVAL_UNRECOGNIZED, key='-INTERVAL-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.CAPTURE_INTERVAL_UNRECOGNIZED})")],
             [sg.Text("Expansão de área de captura da imagem:"), sg.InputText(self.recognition.EXPAND_RATIO, key='-EXPAND-RATIO-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.EXPAND_RATIO})")],
             [sg.Text("Texture Threshold:"), sg.InputText(self.recognition.THRESHOLD_TEXTURE, key='-TEXTURE-THRESH-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.THRESHOLD_TEXTURE})")],
             [sg.Text("Reflection Threshold:"), sg.InputText(self.recognition.THRESHOLD_REFLECTION, key='-REFLECTION-THRESH-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.THRESHOLD_REFLECTION})")],
+            [sg.Text("Limite de Reconhecimento de Distância Facial:"), sg.InputText(self.recognition.DIS_FACE_ENCODING, key='-DIS-FACE-ENCODING-', size=(10, 1)), sg.Text(f"(Padrão: {self.recognition.DIS_FACE_ENCODING})")],
             [sg.Button("Aplicar Configurações", key='-APPLY-SETTINGS-')]
         ]
 
         # Nova coluna para cadastro de imagem
         adicionar_imagem_column = [
-            [sg.Text("Nome da Pessoa:")],
+            [sg.Text("Nome da Pessoa (ou Identificador Único):")],
             [sg.InputText(key='-PERSON-NAME-')],
-            [sg.Text("Selecione a Imagem:")],
-            [sg.InputText(), sg.FileBrowse(key='-IMAGE-FILE-')],
-            [sg.Button("Salvar Imagem")]
+            [sg.Text("Selecione a Imagem ou Capture:")],
+            [sg.InputText(key='-IMAGE-PATH-'), sg.FileBrowse(key='-IMAGE-FILE-'), sg.Button("Capturar", key='-CAPTURE-'), sg.Button("Excluir", key='-IMAGE-BTN-DELETE-')],
+            [sg.Image(filename='', key='-IMAGE-PREVIEW-')],
+            [sg.Button('<-', key='-IMAGE-BTN-PREV-'), sg.Button('->', key='-IMAGE-BTN-NEXT-')],
+            [sg.Button("Salvar Imagem", key='-SAVE-ADD-IMAGE-'), sg.Button("Cancelar", key='-CANCEL-ADD-IMAGE-')]
         ]
         
         layout = [
@@ -136,12 +142,12 @@ class Interface:
             [
                 sg.Column(
                     [
-                        [sg.Button('Iniciar Identificação', size=(15, 2))],
-                        [sg.Button('Câmera', size=(15, 2))],
-                        [sg.Button('Cadastro Imagem', size=(15, 2))],
-                        [sg.Button('Lista de Imagens', size=(15, 2))],
-                        [sg.Button('Tabela Pessoas Identificadas', size=(15, 2))],
-                        [sg.Button('Configurações', size=(15, 2))],
+                        [sg.Button('Iniciar Identificação', key='-INITIALIZE-IDENTIFY-FACES-', size=(15, 2))],
+                        [sg.Button('Câmera', key='-LAYOUT-CAM-', size=(15, 2))],
+                        [sg.Button('Cadastro Imagem', key='-IMAGE-REGISTRATION-FACE-LIST-', size=(15, 2))],
+                        [sg.Button('Lista de Imagens', key='-IMAGES-FACE-LIST-', size=(15, 2))],
+                        [sg.Button('Tabela Pessoas Identificadas', key='-TABLE-RECOGNIZED-FACES-', size=(15, 2))],
+                        [sg.Button('Configurações', key='-CONFIG-', size=(15, 2))],
                     ],
                     element_justification='right',
                     vertical_alignment='top',
@@ -228,48 +234,49 @@ class Interface:
     def verify_window_event(self, event, value):
         if event == sg.WIN_CLOSED:
             return True
-        elif event == 'Iniciar Identificação':
+        elif event == '-INITIALIZE-IDENTIFY-FACES-':
             # Lógica para iniciar ou desligar a identificação de pessoas
             if self.init_face_recognition:
                 self.init_face_recognition = False
-                self.window['Iniciar Identificação'].update(text='Iniciar Identificação')
+                self.window['-INITIALIZE-IDENTIFY-FACES-'].update(text='Iniciar Identificação')
             else: 
+                self.recognition.reload_encodings() # Recarrega os encodes das faces
+                time.sleep(0.1)
                 self.init_face_recognition = True
-                self.window['Iniciar Identificação'].update(text='Parar Identificação')
-        elif event == 'Câmera':
+                self.window['-INITIALIZE-IDENTIFY-FACES-'].update(text='Parar Identificação')
+        elif event == '-LAYOUT-CAM-':
             self.window['-CAMERA_COL-'].update(visible=True)
             self.window['-TABLE_COL-'].update(visible=False)
             self.window['-SETTINGS_COL-'].update(visible=False)
             self.window['-ADD_IMAGE_COL-'].update(visible=False)
             self.window['-LIST_IMAGES_COL-'].update(visible=False)
-        elif event == 'Cadastro Imagem':
+        elif event == '-IMAGE-REGISTRATION-FACE-LIST-':
             self.window['-CAMERA_COL-'].update(visible=False)
             self.window['-TABLE_COL-'].update(visible=False)
             self.window['-SETTINGS_COL-'].update(visible=False)
             self.window['-ADD_IMAGE_COL-'].update(visible=True)
             self.window['-LIST_IMAGES_COL-'].update(visible=False)
             pass
-        elif event == 'Lista de Imagens':
-            self.update_person_list()
+        elif event == '-IMAGES-FACE-LIST-':
             self.window['-CAMERA_COL-'].update(visible=False)
             self.window['-TABLE_COL-'].update(visible=False)
             self.window['-SETTINGS_COL-'].update(visible=False)
             self.window['-ADD_IMAGE_COL-'].update(visible=False)
             self.window['-LIST_IMAGES_COL-'].update(visible=True)
             pass
-        elif event == 'Tabela Pessoas Identificadas':
+        elif event == '-TABLE-RECOGNIZED-FACES-':
             self.window['-TABLE_COL-'].update(visible=True)
             self.window['-CAMERA_COL-'].update(visible=False)
             self.window['-SETTINGS_COL-'].update(visible=False)
             self.window['-ADD_IMAGE_COL-'].update(visible=False)
             self.window['-LIST_IMAGES_COL-'].update(visible=False)
-        elif event == 'Configurações':
+        elif event == '-CONFIG-':
             self.window['-SETTINGS_COL-'].update(visible=True)
             self.window['-CAMERA_COL-'].update(visible=False)
             self.window['-TABLE_COL-'].update(visible=False)
             self.window['-ADD_IMAGE_COL-'].update(visible=False)
             self.window['-LIST_IMAGES_COL-'].update(visible=False)
-        elif event == 'Selecionar Câmera':
+        elif event == '-CAMERA-SELECT-LIST-':
             camera_selection = value['-CAMERA-LIST-']
             if camera_selection:
                 # Pega o índice da câmera a partir da seleção
@@ -277,18 +284,16 @@ class Interface:
                 self.cap.release()
                 self.init_capture_webcam(self.cam_index)
                 sg.PopupOK("As câmeras foi selecionada!")
-        elif event == 'Atualizar Câmeras':
+        elif event == '-CAMERA-UPDATE-LIST-':
             self.update_list_camera()
-        elif event == 'Salvar Imagem':
+        elif event == '-CAPTURE-':
+            self.capture_image()
+        elif event == '-CANCEL-ADD-IMAGE-':
+            self.window['-IMAGE-PREVIEW-'].update(data='')  # Limpar a visualização
+            self.captured_image = None  # Resetar a imagem capturada
+        elif event == '-SAVE-ADD-IMAGE-':
             person_name = value['-PERSON-NAME-']
-            image_file = value['-IMAGE-FILE-']
-
-            if person_name and image_file:
-                self.save_to_json(person_name, image_file) # salva o json e a imagem
-                sg.Popup("Cadastro salvo com sucesso!")
-                self.recognition.reload_encodings()  # Recarrega os encodes das faces
-            else:
-                sg.Popup("Por favor, preencha todos os campos.")
+            self.save_captured_image(person_name, '-IMAGE-PATH-')
         elif event == '-APPLY-SETTINGS-':
             try:
                 max_captures = int(value['-MAX-CAPTURES-'])
@@ -296,11 +301,20 @@ class Interface:
                 expand_ratio = float(value['-EXPAND-RATIO-'])
                 texture_thresh = float(value['-TEXTURE-THRESH-'])
                 reflection_thresh = float(value['-REFLECTION-THRESH-'])
+                dis_face_encoding = float(value['-DIS-FACE-ENCODING-'])
 
-                self.recognition.setup_parameters(max_captures, interval, expand_ratio, texture_thresh, reflection_thresh)
+                self.recognition.setup_parameters(max_captures, interval, expand_ratio, texture_thresh, reflection_thresh, dis_face_encoding)
                 sg.Popup("Configurações atualizadas com sucesso!")
             except ValueError:
-                sg.PopupError("Por favor, insira valores válidos para as configurações.")            
+                sg.PopupError("Por favor, insira valores válidos para as configurações.")  
+        elif event == '-IMAGE-BTN-NEXT-':
+            self.navigate_faces(1)  # Move para a próxima face
+        elif event == '-IMAGE-BTN-PREV-':
+            self.navigate_faces(-1)  # Move para a face anterior
+        elif event == '-IMAGE-BTN-DELETE-':
+            self.window['-IMAGE-PREVIEW-'].update(data='')  # Limpa a visualização
+            self.detected_faces = []  # Limpa a lista de faces detectadas
+
         return False
     
     # verifica se a camera esta aberta
@@ -354,13 +368,10 @@ class Interface:
         self.update_table()
         self.update_camera(camera_open, img)
 
-    def save_to_json(self, person_name, image_path):
-        # Cria um ID único para a entrada
-        unique_id = str(uuid.uuid4())
+    def save_to_json(self, person_name, image_path, unique_id):
         data = {
             "id": unique_id,
-            "name": person_name,
-            "image_path": image_path
+            "name": person_name
         }
 
         # Lê o arquivo JSON existente e adiciona a nova entrada
@@ -374,6 +385,64 @@ class Interface:
             with open('persons.json', 'w') as file:
                 json.dump([data], file, indent=4)
 
-        # (Opcional) Copia a imagem para um diretório específico
-        new_image_path = os.path.join(self.PATH_IMAGES, unique_id + os.path.splitext(image_path)[1])
-        shutil.copy(image_path, new_image_path)
+    def capture_image(self):
+        if self.cap.isOpened():
+            time.sleep(0.1)  # Pequeno delay para garantir que a câmera esteja pronta
+            ret, frame = self.cap.read()
+            if ret:
+                self.detected_faces = self.recognition.extract_faces(frame)  # Modificada para extrair múltiplas faces
+                if self.detected_faces:
+                    self.current_face_index = 0  # Inicializa com a primeira face
+                    self.update_preview(self.current_face_index)
+                else:
+                    sg.PopupError("Nenhuma face detectada.")
+            else:
+                sg.PopupError("Falha ao capturar imagem da câmera.")
+        else:
+            sg.PopupError("A câmera não está inicializada.")
+        
+    def update_preview(self, index):
+        if index < len(self.detected_faces):
+            imgbytes = cv.imencode('.png', self.detected_faces[index])[1].tobytes()
+            self.current_image_data = imgbytes  # Armazenar os dados da imagem
+            self.window['-IMAGE-PREVIEW-'].update(data=imgbytes)
+        else:
+            self.current_image_data = None
+            self.window['-IMAGE-PREVIEW-'].update(data=b'')  # Limpa a visualização se o índice não for válido
+
+
+    def navigate_faces(self, direction):
+        if self.detected_faces:
+            self.current_face_index += direction
+            self.current_face_index %= len(self.detected_faces)  # Garante um loop cíclico
+            self.update_preview(self.current_face_index)
+
+    def save_captured_image(self, person_name, image_path_key):
+        if not person_name:
+            sg.Popup("Por favor, forneça um nome ou identificador único.")
+            return
+
+        unique_id = str(uuid.uuid4())  # Gerar o ID único aqui
+        file_name = f"{unique_id}.png"
+        file_path = os.path.join(self.PATH_FACES, file_name)
+
+        if self.current_image_data:  # Verifica se há dados de imagem armazenados
+            img_array = cv.imdecode(np.frombuffer(self.current_image_data, np.uint8), cv.IMREAD_COLOR)
+            cv.imwrite(file_path, img_array)
+        elif os.path.isfile(self.window[image_path_key].get()):
+            shutil.copy(self.window[image_path_key].get(), file_path)
+        else:
+            sg.Popup("Por favor, capture uma imagem ou selecione um arquivo.")
+            return
+
+        self.save_to_json(person_name, file_path, unique_id)  # Passar o unique_id para incluir no JSON
+        self.recognition.reload_encodings() # Recarrega os encodings
+        self.update_person_list() # Recarrega os dados da lista de pessoas
+        sg.Popup("Cadastro salvo com sucesso!")
+        self.window['-IMAGE-PREVIEW-'].update(data=b'')  # Limpar a visualização após salvar
+        self.window['-PERSON-NAME-'].update('')
+        self.current_image_data = None  # Resetar os dados da imagem após salvar
+        self.detected_faces = []  # Limpar a lista de faces detectadas
+
+
+        
