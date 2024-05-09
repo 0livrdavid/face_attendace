@@ -1,5 +1,6 @@
 .DS_Store
 build/
 dist/
-faces/
-/unrecognized_faces/
+faces/*
+recognized_faces/*
+unrecognized_faces/*
