@@ -13,7 +13,7 @@ from recognition import Recognition
 
 class Interface:
     def __init__(self):
-        logging.basicConfig(filename='app.log', level=logging.ERROR)
+        logging.basicConfig(filename='interface.log', level=logging.ERROR)
 
         if not self.init_variable_path():
             sg.PopupError("Erro ao carregar as pastas do projeto!")
@@ -25,7 +25,10 @@ class Interface:
             logging.error("Erro ao carregar as variáveis do projeto!")
             return
         
-        self.init_interface()
+        if not self.init_interface():
+            sg.PopupError("Erro ao inicializar a interface de reconhecimento!")
+            logging.error("Erro ao inicializar a interface de reconhecimento!")
+            return
         
         self.layout = self.def_layout()
         if self.layout is None:
@@ -40,14 +43,7 @@ class Interface:
             return
         
         self.update_person_list()
-
-    def init_interface(self):
-        self.recognition = Recognition(
-            path_faces=self.PATH_FACES, 
-            save_path_recognized=self.SAVE_PATH_RECOGNIZED, 
-            save_path_unrecognized=self.SAVE_PATH_UNRECOGNIZED
-        )
-
+        
     def run(self):
         while True:
             self.module_functions()
@@ -55,6 +51,19 @@ class Interface:
             if self.verify_window_event(event, values):
                 break
         self.cleanup_resources()
+
+    def init_interface(self):
+        try:
+            self.recognition = Recognition(
+                path_faces=self.PATH_FACES, 
+                save_path_recognized=self.SAVE_PATH_RECOGNIZED, 
+                save_path_unrecognized=self.SAVE_PATH_UNRECOGNIZED
+            )
+            return True
+        except Exception as e:
+            sg.PopupError(f"Erro ao inicializar o módulo de reconhecimento: {str(e)}")
+            logging.error(f"Erro ao inicializar o módulo de reconhecimento: {str(e)}")
+            return False
         
     def init_variable_path(self):
         try:
@@ -62,7 +71,6 @@ class Interface:
             self.PATH_FACES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'faces')  # Pasta onde fica as imagens das pessoas conhecidas
             self.SAVE_PATH_RECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recognized_faces') # Pasta onde as imagens de conhecidos serão salvase
             self.SAVE_PATH_UNRECOGNIZED = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unrecognized_faces')  # Pasta onde as imagens de desconhecidos serão salvas
-            self.SAVE_PATH_ATTENDANCE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'attendance')  # Pasta onde os csv exportados serão salvas
             return True
         except Exception as e:
             sg.PopupError(f"Erro ao inicializar variaveis de path: {str(e)}")
@@ -188,12 +196,18 @@ class Interface:
         
     # atualiza a tabela
     def update_table(self):
-        table_data = [[record['name'], record['timestamp_recognized'], record['distance']] for record in self.recognition.recognized_faces]
-        self.window['-TABLE-'].update(values=table_data)
+        try:
+            table_data = [[record['name'], record['timestamp_recognized'], record['distance']] for record in self.recognition.recognized_faces]
+            self.window['-TABLE-'].update(values=table_data)
+        except Exception as e:
+            logging.error(f"Error updating table: {str(e)}")
         
     def update_person_list(self):
-        list_data = [[id, name] for id, name in self.recognition.person_name.items()]
-        self.window['-LIST-'].update(values=list_data)
+        try:
+            list_data = [[id, name] for id, name in self.recognition.person_name.items()]
+            self.window['-LIST-'].update(values=list_data)
+        except Exception as e:
+            logging.error(f"Error updating person list: {str(e)}")
       
     # atualiza a lista de cameras
     def update_list_camera(self):
@@ -212,7 +226,6 @@ class Interface:
             open = False
             img = self.placeholder_img
 
-        # Restante do código para redimensionar e atualizar a imagem...
         # Calcula o novo tamanho mantendo o aspect ratio
         max_width, max_height = 640, 480
         height, width = img.shape[:2]
@@ -245,8 +258,7 @@ class Interface:
         if event == sg.WIN_CLOSED:
             return True
         elif event == '-INITIALIZE-IDENTIFY-FACES-':
-            # Lógica para iniciar ou desligar a identificação de pessoas
-            if self.init_face_recognition:
+            if self.init_face_recognition: # Lógica para iniciar ou desligar a identificação de pessoas
                 self.init_face_recognition = False
                 self.window['-INITIALIZE-IDENTIFY-FACES-'].update(text='Iniciar Identificação')
             else: 
@@ -258,37 +270,16 @@ class Interface:
             if not self.full_screen_active:
                 self.full_screen_active = True
         elif event == '-LAYOUT-CAM-':
-            self.window['-CAMERA_COL-'].update(visible=True)
-            self.window['-TABLE_COL-'].update(visible=False)
-            self.window['-SETTINGS_COL-'].update(visible=False)
-            self.window['-ADD_IMAGE_COL-'].update(visible=False)
-            self.window['-LIST_IMAGES_COL-'].update(visible=False)
+            self.updateVisibility('-CAMERA_COL-')
         elif event == '-IMAGE-REGISTRATION-FACE-LIST-':
-            self.window['-CAMERA_COL-'].update(visible=False)
-            self.window['-TABLE_COL-'].update(visible=False)
-            self.window['-SETTINGS_COL-'].update(visible=False)
-            self.window['-ADD_IMAGE_COL-'].update(visible=True)
-            self.window['-LIST_IMAGES_COL-'].update(visible=False)
-            pass
+            self.updateVisibility('-ADD_IMAGE_COL-')
         elif event == '-IMAGES-FACE-LIST-':
-            self.window['-CAMERA_COL-'].update(visible=False)
-            self.window['-TABLE_COL-'].update(visible=False)
-            self.window['-SETTINGS_COL-'].update(visible=False)
-            self.window['-ADD_IMAGE_COL-'].update(visible=False)
-            self.window['-LIST_IMAGES_COL-'].update(visible=True)
-            pass
+            self.update_person_list() # Recarrega os dados da lista de pessoas
+            self.updateVisibility('-LIST_IMAGES_COL-')
         elif event == '-TABLE-RECOGNIZED-FACES-':
-            self.window['-TABLE_COL-'].update(visible=True)
-            self.window['-CAMERA_COL-'].update(visible=False)
-            self.window['-SETTINGS_COL-'].update(visible=False)
-            self.window['-ADD_IMAGE_COL-'].update(visible=False)
-            self.window['-LIST_IMAGES_COL-'].update(visible=False)
+            self.updateVisibility('-TABLE_COL-')
         elif event == '-CONFIG-':
-            self.window['-SETTINGS_COL-'].update(visible=True)
-            self.window['-CAMERA_COL-'].update(visible=False)
-            self.window['-TABLE_COL-'].update(visible=False)
-            self.window['-ADD_IMAGE_COL-'].update(visible=False)
-            self.window['-LIST_IMAGES_COL-'].update(visible=False)
+            self.updateVisibility('-SETTINGS_COL-')
         elif event == '-CAMERA-SELECT-LIST-':
             camera_selection = value['-CAMERA-LIST-']
             if camera_selection:
@@ -296,7 +287,7 @@ class Interface:
                 self.cam_index = int(camera_selection[0].split(" - ")[0])
                 self.cap.release()
                 self.init_capture_webcam(self.cam_index)
-                sg.PopupOK("As câmeras foi selecionada!")
+                sg.PopupOK("A câmera foi selecionada!")
         elif event == '-CAMERA-UPDATE-LIST-':
             self.update_list_camera()
         elif event == '-CAPTURE-':
@@ -310,14 +301,14 @@ class Interface:
         elif event == '-APPLY-SETTINGS-':
             try:
                 max_captures = int(value['-MAX-CAPTURES-'])
-                interval = float(value['-INTERVAL-'])
+                capture_interval = float(value['-INTERVAL-'])
                 expand_ratio = float(value['-EXPAND-RATIO-'])
-                texture_thresh = float(value['-TEXTURE-THRESH-'])
-                reflection_thresh = float(value['-REFLECTION-THRESH-'])
+                threshold_texture = float(value['-TEXTURE-THRESH-'])
+                threshold_reflection = float(value['-REFLECTION-THRESH-'])
                 dis_face_encoding = float(value['-DIS-FACE-ENCODING-'])
                 face_height_threshold = float(value['-HEIGHT-THRESH-'])
 
-                self.recognition.setup_parameters(max_captures, interval, expand_ratio, texture_thresh, reflection_thresh, dis_face_encoding, face_height_threshold)
+                self.recognition.setup_parameters(max_captures, capture_interval, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding, face_height_threshold)
                 sg.Popup("Configurações atualizadas com sucesso!")
             except ValueError:
                 sg.PopupError("Por favor, insira valores válidos para as configurações.")  
@@ -332,6 +323,12 @@ class Interface:
             self.export_table_to_csv(self.window)
 
         return False
+    
+    def updateVisibility(self, name):
+        columns = ['-CAMERA_COL-', '-TABLE_COL-', '-SETTINGS_COL-', '-ADD_IMAGE_COL-', '-LIST_IMAGES_COL-']
+        visibility = [name == col for col in columns]
+        for col, vis in zip(columns, visibility):
+            self.window[col].update(visible=vis)
     
     # verifica se a camera esta aberta
     def cameraIsOpen(self):
@@ -388,7 +385,6 @@ class Interface:
             else:
                 self.open_full_screen_camera()
                 
-
     def get_screen_size(self):
         for m in get_monitors():
             return m.width, m.height  # Retorna a resolução do primeiro monitor
@@ -494,8 +490,6 @@ class Interface:
             return
 
         self.save_to_json(person_name, file_path, unique_id)  # Passar o unique_id para incluir no JSON
-        self.recognition.reload_encodings() # Recarrega os encodings
-        self.update_person_list() # Recarrega os dados da lista de pessoas
         sg.Popup("Cadastro salvo com sucesso!")
         self.window['-IMAGE-PREVIEW-'].update(data=b'')  # Limpar a visualização após salvar
         self.window['-PERSON-NAME-'].update('')

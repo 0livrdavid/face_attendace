@@ -9,50 +9,20 @@ import cv2 as cv  # OpenCV para manipulação de imagem e vídeo
 import face_recognition as fr  # Para reconhecimento facial
 
 class Recognition:
-    def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.50, face_height_threshold = 350):
-        logging.basicConfig(filename='recognition.log', level=logging.INFO)
+    def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.55, face_height_threshold = 250):
+        logging.basicConfig(filename='recognition.log', level=logging.ERROR)
         
         # Definição dos caminhos relativos as pastas
-        self.setup_paths(path_faces, save_path_recognized, save_path_unrecognized)
+        if not self.init_variable_path(path_faces, save_path_recognized, save_path_unrecognized):
+            logging.error("Failed to initialize path variables.")
         
-        # variaveis de controle
-        self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding, face_height_threshold)
+        # variaveis de path
+        if not self.setup_parameters(max_captures_unrecognized, capture_interval_unrecognized, expand_ratio, threshold_texture, threshold_reflection, dis_face_encoding, face_height_threshold):
+            logging.error("Failed to setup parameters.")
         
-        self.recognized_faces = []  # Lista para armazenar informações sobre rostos conhecidos
-        self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
-        self.last_captured_time = datetime.now()
-        self.value_has_reflection = False
-        self.value_is_fake_via_texture = False
-        self.value_round_is_fake_via_texture = 0
-        self.value_round_has_reflection = 0
-        self.image_count = {}
-        self.last_capture_time_recognized = {}
-
-        self.load_and_encode_images()# Carrega as imagens do diretório especificado  
-        self.encodeListKnown = self.find_encodings(self.images) # Obter encodings das imagens conhecidas
-        self.load_person_names() # dicionário onde as chaves são os nomes dos arquivos de imagem
+        if not self.init_variable(): # variaveis de controle
+            logging.error("Failed to initialize control variables.")
         
-    def setup_paths(self, path_faces, save_path_recognized, save_path_unrecognized):
-        self.PATH_FACES = path_faces
-        self.SAVE_PATH_RECOGNIZED = save_path_recognized
-        self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
-        
-    def setup_parameters(self, max_captures=None, interval=None, expand_ratio=None, texture_thresh=None, reflection_thresh=None, dis_face_encoding=None, face_height_threshold=None):
-        if max_captures is not None:
-            self.MAX_CAPTURES_UNRECOGNIZED = max_captures
-        if interval is not None:
-            self.CAPTURE_INTERVAL_UNRECOGNIZED = interval
-        if expand_ratio is not None:
-            self.EXPAND_RATIO = expand_ratio
-        if texture_thresh is not None:
-            self.THRESHOLD_TEXTURE = texture_thresh
-        if reflection_thresh is not None:
-            self.THRESHOLD_REFLECTION = reflection_thresh
-        if dis_face_encoding is not None:
-            self.DIS_FACE_ENCODING = dis_face_encoding
-        if face_height_threshold is not None:
-            self.FACE_HEIGHT_THRESHOLD = face_height_threshold
-
     # Setter para MAX_CAPTURES_UNRECOGNIZED
     def set_MAX_CAPTURES_UNRECOGNIZED(self, max_captures_unrecognized):
         self.MAX_CAPTURES_UNRECOGNIZED = max_captures_unrecognized
@@ -81,9 +51,75 @@ class Recognition:
     def set_DIS_FACE_ENCODING(self, dis_face_encoding):
         self.DIS_FACE_ENCODING = dis_face_encoding
         
+    # Setter para FACE_HEIGHT_THRESHOLD
+    def set_FACE_HEIGHT_THRESHOLD(self, face_height_threshold):
+        self.FACE_HEIGHT_THRESHOLD = face_height_threshold
+        
+    def init_variable_path(self, path_faces, save_path_recognized, save_path_unrecognized):
+        try:
+            self.PATH_FACES = path_faces
+            self.SAVE_PATH_RECOGNIZED = save_path_recognized
+            self.SAVE_PATH_UNRECOGNIZED = save_path_unrecognized
+            return True
+        except Exception as e:
+            logging.error(f"Error setting path variables: {str(e)}")
+            return False
+        
+    def setup_parameters(self, max_captures=None, capture_interval=None, expand_ratio=None, threshold_texture=None, threshold_reflection=None, dis_face_encoding=None, face_height_threshold=None):
+        try:
+            if max_captures is not None:
+                self.set_MAX_CAPTURES_UNRECOGNIZED(max_captures)
+            if capture_interval is not None:
+                self.set_CAPTURE_INTERVAL_UNRECOGNIZED(capture_interval)
+            if expand_ratio is not None:
+                self.set_EXPAND_RATIO(expand_ratio)
+            if threshold_texture is not None:
+                self.set_THRESHOLD_TEXTURE(threshold_texture)
+            if threshold_reflection is not None:
+                self.set_THRESHOLD_REFLECTION(threshold_reflection)
+            if dis_face_encoding is not None:
+                self.set_DIS_FACE_ENCODING(dis_face_encoding)
+            if face_height_threshold is not None:
+                self.set_FACE_HEIGHT_THRESHOLD(face_height_threshold)
+            return True
+        except Exception as e:
+            logging.error(f"Error setting parameters: {str(e)}")
+            return False
+            
+    def init_variable(self):
+        try:
+            self.recognized_faces = []  # Lista para armazenar informações sobre rostos conhecidos
+            self.unrecognized_faces = []  # Lista para armazenar informações sobre rostos desconhecidos
+            self.last_captured_time = datetime.now()
+            self.value_has_reflection = False
+            self.value_is_fake_via_texture = False
+            self.value_round_is_fake_via_texture = 0
+            self.value_round_has_reflection = 0
+            self.image_count = {}
+            self.last_capture_time_recognized = {}
+            self.encodeListKnown = []
+            self.person_name = {}
+            return True
+        except Exception as e:
+            logging.error(f"Error initializing variables: {str(e)}")
+            return False
+        
     # verifica se é uma imagem
     def is_image_file(self, filename):
         return re.search(r'\.(jpg|jpeg|png)$', filename, re.IGNORECASE)
+    
+    # Função para encontrar encodings das faces nas imagens
+    def find_encodings(self, images):
+        encode_list = []
+        for img in images:
+            try:
+                img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+                encode = fr.face_encodings(img)[0]
+                encode_list.append(encode)
+            except Exception as e:
+                logging.error(f"Erro ao processar a imagem: {str(e)}")
+        logging.info('Encoding Complete')
+        return encode_list
     
     # Carrega as imagens do diretório especificado    
     def load_and_encode_images(self):
@@ -110,19 +146,6 @@ class Recognition:
             self.person_name = {entry['id']: entry['name'] for entry in person_data}
         except FileNotFoundError:
             self.person_name = {}
-
-    # Função para encontrar encodings das faces nas imagens
-    def find_encodings(self, images):
-        encode_list = []
-        for img in images:
-            try:
-                img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-                encode = fr.face_encodings(img)[0]
-                encode_list.append(encode)
-            except Exception as e:
-                logging.error(f"Erro ao processar a imagem: {str(e)}")
-        logging.info('Encoding Complete')
-        return encode_list
     
     # Função para checar ou atualizar array de rostos desconhecidos
     def check_or_update_unrecognized(self, face_encoding, _update):
