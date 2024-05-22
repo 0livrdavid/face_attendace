@@ -10,10 +10,15 @@ import shutil
 from screeninfo import get_monitors
 import numpy as np
 from recognition import Recognition
+from pathlib import Path
 
 class Interface:
     def __init__(self):
-        logging.basicConfig(filename='interface.log', level=logging.ERROR)
+        home_dir = Path.home()
+        log_file = home_dir / 'face_attendance_logs' / 'interface.log'
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(filename=str(log_file), level=logging.ERROR, 
+                            format='%(asctime)s:%(levelname)s:%(message)s')
 
         if not self.init_variable_path():
             sg.PopupError("Erro ao carregar as pastas do projeto!")
@@ -21,13 +26,18 @@ class Interface:
             return
         
         if not self.init_variables():
-            sg.PopupError("Erro ao carregar as variáveis do projeto!")
-            logging.error("Erro ao carregar as variáveis do projeto!")
+            sg.PopupError("Erro ao inicializar as variáveis!")
+            logging.error("Erro ao inicializar as variáveis!")
             return
         
-        if not self.init_interface():
+        if not self.init_recognition_class():
             sg.PopupError("Erro ao inicializar a interface de reconhecimento!")
             logging.error("Erro ao inicializar a interface de reconhecimento!")
+            return
+        
+        if not self.init_persons():
+            sg.PopupError("Erro ao inicializar as informações das pessoas!")
+            logging.error("Erro ao inicializar as informações das pessoas!")
             return
         
         self.layout = self.def_layout()
@@ -42,8 +52,6 @@ class Interface:
             logging.error("Erro ao criar a janela!")
             return
         
-        self.update_person_list()
-        
     def run(self):
         while True:
             self.module_functions()
@@ -52,7 +60,7 @@ class Interface:
                 break
         self.cleanup_resources()
 
-    def init_interface(self):
+    def init_recognition_class(self):
         try:
             self.recognition = Recognition(
                 path_faces=self.PATH_FACES, 
@@ -76,6 +84,24 @@ class Interface:
             sg.PopupError(f"Erro ao inicializar variaveis de path: {str(e)}")
             logging.error(f"Erro ao inicializar variaveis de path: {str(e)}")
             return False
+        
+    
+    def init_persons(self):
+        # Verifica se o arquivo persons.json existe e inicializa se necessário
+        persons_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'persons.json')
+        if not os.path.exists(persons_path):
+            try:
+                with open(persons_path, 'w') as file:
+                    json.dump([], file)  # Cria um arquivo JSON vazio
+                logging.info("Arquivo persons.json criado com sucesso.")
+                return True
+            except Exception as e:
+                sg.PopupError(f"Erro ao criar o arquivo persons.json: {str(e)}")
+                logging.error(f"Erro ao criar o arquivo persons.json: {str(e)}")
+                return False
+        else:
+            logging.info("Arquivo persons.json já existe.")
+            return True
         
     def init_variables(self):
         #definição de variaveis
@@ -202,6 +228,7 @@ class Interface:
         except Exception as e:
             logging.error(f"Error updating table: {str(e)}")
         
+    # atualiza a lista de pessoas
     def update_person_list(self):
         try:
             list_data = [[id, name] for id, name in self.recognition.person_name.items()]
@@ -440,20 +467,24 @@ class Interface:
                 json.dump([data], file, indent=4)
 
     def capture_image(self):
-        if self.cap.isOpened():
-            time.sleep(0.1)  # Pequeno delay para garantir que a câmera esteja pronta
-            ret, frame = self.cap.read()
-            if ret:
-                self.detected_faces = self.recognition.extract_faces(frame)  # Modificada para extrair múltiplas faces
-                if self.detected_faces:
-                    self.current_face_index = 0  # Inicializa com a primeira face
-                    self.update_preview(self.current_face_index)
+        try:
+            if self.cap.isOpened():
+                time.sleep(0.1)  # Pequeno delay para garantir que a câmera esteja pronta
+                ret, frame = self.cap.read()
+                if ret:
+                    self.detected_faces = self.recognition.extract_faces(frame)  # Modificada para extrair múltiplas faces
+                    if self.detected_faces:
+                        self.current_face_index = 0  # Inicializa com a primeira face
+                        self.update_preview(self.current_face_index)
+                    else:
+                        sg.PopupError("Nenhuma face detectada.")
                 else:
-                    sg.PopupError("Nenhuma face detectada.")
+                    sg.PopupError("Falha ao capturar imagem da câmera.")
             else:
-                sg.PopupError("Falha ao capturar imagem da câmera.")
-        else:
-            sg.PopupError("A câmera não está inicializada.")
+                sg.PopupError("A câmera não está inicializada.")
+        except Exception as e:
+            sg.PopupError(f"Erro ao acessar a câmera: {str(e)}")
+            logging.error(f"Erro ao acessar a câmera: {str(e)}")
         
     def update_preview(self, index):
         if index < len(self.detected_faces):
@@ -497,18 +528,14 @@ class Interface:
         self.detected_faces = []  # Limpar a lista de faces detectadas
 
     def export_table_to_csv(self, window):
-        # Recuperar os dados da tabela
-        table_data = window['-TABLE-'].get()
+        table_data = window['-TABLE-'].get() # Recuperar os dados da tabela
         filename = sg.popup_get_file('Salvar como', save_as=True, no_window=True, file_types=(("CSV Files", "*.csv"),), default_extension='.csv')
         
         if filename:
-            # Abrir o arquivo para escrita
-            with open(filename, 'w', newline='', encoding='utf-8') as file:
+            with open(filename, 'w', newline='', encoding='utf-8') as file: # Abrir o arquivo para escrita
                 writer = csv.writer(file, delimiter=';')
-                # Escrever o cabeçalho
-                writer.writerow(['Identificador', 'Data e Hora', 'Distancia Facial'])
-                # Escrever os dados da tabela
-                writer.writerows(table_data)
+                writer.writerow(['Identificador', 'Data e Hora', 'Distancia Facial']) # Escrever o cabeçalho
+                writer.writerows(table_data) # Escrever os dados da tabela
             sg.popup('Dados exportados com sucesso!', title='Sucesso')
         else:
             sg.popup('Exportação cancelada.', title='Cancelado')

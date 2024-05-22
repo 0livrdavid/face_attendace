@@ -4,3 +4,5 @@ faces/*
 recognized_faces/*
 unrecognized_faces/*
 persons.json
+dist
+

@@ -9,14 +9,16 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('src', 'src'),
-        ('faces', 'faces'),
-        ('recognized_faces', 'recognized_faces'),
-        ('unrecognized_faces', 'unrecognized_faces'),
-        ('attendance', 'attendance'),
         (face_recognition_path, 'face_recognition'),
         (dlib_path, 'dlib'),
-        (face_recognition_models_path, 'face_recognition_models')
+        (face_recognition_models_path, 'face_recognition_models'),  # Adicionada vírgula aqui
+        ('src/placeholder.png', 'src'),  # Copia o placeholder.png para uma pasta src no app empacotado
+        ('persons.json', '.'),  # Copia persons.json para a raiz do diretório do app empacotado
+        ('interface.log', '.'),  # Copia interface.log para a raiz do diretório do app empacotado
+        ('recognition.log', '.'),  # Copia recognition.log para a raiz do diretório do app empacotado
+        ('faces/', 'faces'),  # Copia a pasta faces inteira
+        ('recognized_faces/', 'recognized_faces'),  # Copia a pasta recognized_faces inteira
+        ('unrecognized_faces/', 'unrecognized_faces'),  # Copia a pasta unrecognized_faces inteira
     ],
     hiddenimports=[],
     hookspath=[],
@@ -46,6 +48,15 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='main',
 )
 app = BUNDLE(
     exe,

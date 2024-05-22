@@ -10,7 +10,10 @@ import face_recognition as fr  # Para reconhecimento facial
 
 class Recognition:
     def __init__(self, path_faces, save_path_recognized, save_path_unrecognized, max_captures_unrecognized = 4, capture_interval_unrecognized = 2.0, expand_ratio = 0.25, threshold_texture = 450, threshold_reflection = 180, dis_face_encoding = 0.55, face_height_threshold = 250):
-        logging.basicConfig(filename='recognition.log', level=logging.ERROR)
+        home_dir = os.path.expanduser('~')
+        log_file = os.path.join(home_dir, 'recognition_logs', 'recognition.log')
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        logging.basicConfig(filename=log_file, level=logging.ERROR, format='%(asctime)s:%(levelname)s:%(message)s')
         
         # Definição dos caminhos relativos as pastas
         if not self.init_variable_path(path_faces, save_path_recognized, save_path_unrecognized):
