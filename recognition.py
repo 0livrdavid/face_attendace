@@ -268,7 +268,7 @@ class Recognition:
                     matchInRecognition = self.check_or_update_unrecognized(encodeFace, True)  # Atualiza array de rostos desconhecidos
                     filename = os.path.join(self.SAVE_PATH_UNRECOGNIZED, f"{matchInRecognition['name']}.{matchInRecognition['count']} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
                     print(f"Salvando {filename}...")
-                    self.save_image(filename, face_img)
+                    #self.save_image(filename, face_img)
                     self.last_captured_time = current_time
                     #self.mark_attendance(matchInRecognition['name'], 1.00)
             else:
@@ -284,7 +284,7 @@ class Recognition:
                     if last_capture_time_recognized is None or (current_time - last_capture_time_recognized).total_seconds() > 1:
                         if self.image_count.get(name, 0) < 3:
                             filename = os.path.join(person_folder, f"{name}.{self.image_count.get(name, 0) + 1} - {current_time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
-                            self.save_image(filename, face_img)
+                            #self.save_image(filename, face_img)
                             self.image_count[name] = self.image_count.get(name, 0) + 1
                             self.last_capture_time_recognized[name] = current_time
                             print(f"Salvando {filename}...")
