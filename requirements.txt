@@ -1,8 +1,8 @@
-#pip install -r requirements.txt
-
+setuptools<81
 opencv-python
 numpy
 pandas
 pysimplegui
+dlib==19.24.6
 face_recognition
 screeninfo
